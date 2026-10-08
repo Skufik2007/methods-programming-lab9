@@ -17,8 +17,31 @@ permissions:
   contents: read
 
 jobs:
+  # Тег v1.2.3 должен совпадать с версией в pyproject.toml и Cargo.toml,
+  # иначе на PyPI уйдёт пакет не с той версией. На ветке main проверка пропускается.
+  check-version:
+    name: Проверка версии
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Сверить тег с версиями пакета
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          py=$(python3 -c "import tomllib; print(tomllib.load(open('rust/fastmath/pyproject.toml','rb'))['project']['version'])")
+          rs=$(python3 -c "import tomllib; print(tomllib.load(open('rust/fastmath/Cargo.toml','rb'))['package']['version'])")
+          echo "tag=$tag pyproject=$py cargo=$rs"
+          if [ "$tag" != "$py" ] || [ "$tag" != "$rs" ]; then
+            echo "::error::Версия тега ($tag) не совпадает с pyproject.toml ($py) / Cargo.toml ($rs)"
+            exit 1
+          fi
+
+  # Колёса собираются и на push в main: это проверка, что релиз соберётся на всех
+  # трёх ОС до того, как будет поставлен тег. Публикуются они только по тегу.
   wheels:
     name: Колёса ${{ matrix.os }}
+    needs: check-version
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -51,6 +74,7 @@ jobs:
 
   sdist:
     name: Исходный архив
+    needs: check-version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

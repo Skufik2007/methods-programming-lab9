@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2021"
 description = "Быстрые математические функции на Rust для Python (PyO3 + Maturin)"
 license = "MIT"
+# Запрещает только публикацию крейта на crates.io. Python-пакет на PyPI
+# публикует maturin по pyproject.toml, этот флаг на него не влияет.
 publish = false
 
 [lib]
