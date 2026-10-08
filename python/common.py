@@ -20,14 +20,17 @@ def go_binary(name: str) -> Path:
     return BIN_DIR / f"{name}{EXE_SUFFIX}"
 
 
-def build_go(name: str, force: bool = False) -> Path:
-    """Компилирует go/cmd/<name> в bin/<name>; пересобирает, если исходники новее бинаря."""
-    binary = go_binary(name)
-    src_dir = GO_DIR / "cmd" / name
-    sources = list(src_dir.glob("*.go")) + [GO_DIR / "go.mod"]
-    newest_src = max(p.stat().st_mtime for p in sources)
+_built: set[str] = set()
 
-    if not force and binary.exists() and binary.stat().st_mtime >= newest_src:
+
+def build_go(name: str) -> Path:
+    """Компилирует go/cmd/<name> в bin/<name>.
+
+    `go build` вызывается всегда (один раз за процесс): у Go свой кэш сборки,
+    он сам определяет, что изменилось, включая общие пакеты и зависимости.
+    """
+    binary = go_binary(name)
+    if name in _built and binary.exists():
         return binary
 
     go = shutil.which("go")
@@ -40,6 +43,7 @@ def build_go(name: str, force: bool = False) -> Path:
         cwd=GO_DIR,
         check=True,
     )
+    _built.add(name)
     return binary
 
 
