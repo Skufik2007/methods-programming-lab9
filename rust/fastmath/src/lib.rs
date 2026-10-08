@@ -7,47 +7,79 @@
 use pyo3::exceptions::{PyOverflowError, PyValueError};
 use pyo3::prelude::*;
 
-/// Верхняя граница для решета: 1e9 байт памяти под массив — разумный максимум.
+/// Верхняя граница для решета. Решето хранит 1 бит на нечётное число,
+/// поэтому для 1e9 нужно около 60 МБ памяти.
 pub const MAX_SIEVE_LIMIT: usize = 1_000_000_000;
 
 /// Сумма квадратов с проверкой переполнения i64.
 pub fn sum_squares_checked(numbers: &[i64]) -> Option<i64> {
-    numbers
-        .iter()
-        .try_fold(0i64, |acc, &x| x.checked_mul(x).and_then(|sq| acc.checked_add(sq)))
+    numbers.iter().try_fold(0i64, |acc, &x| {
+        x.checked_mul(x).and_then(|sq| acc.checked_add(sq))
+    })
 }
 
-/// Решето Эратосфена: флаги простоты для чисел 0..=limit.
-fn sieve(limit: usize) -> Vec<bool> {
-    let mut is_prime = vec![true; limit + 1];
-    is_prime[0] = false;
-    if limit >= 1 {
-        is_prime[1] = false;
-    }
-    let mut i = 2;
-    while i * i <= limit {
-        if is_prime[i] {
-            let mut j = i * i;
-            while j <= limit {
-                is_prime[j] = false;
-                j += i;
+/// Решето Эратосфена только по нечётным числам с битовой упаковкой:
+/// бит k отвечает за число 2k + 1 и установлен, если число составное.
+struct Sieve {
+    limit: usize,
+    composite: Vec<u64>,
+}
+
+impl Sieve {
+    fn new(limit: usize) -> Self {
+        // Нечётных чисел в 0..=limit ровно (limit + 1) / 2; при limit = 0 массив пуст.
+        let odd_count = limit.div_ceil(2);
+        let mut composite = vec![0u64; odd_count.div_ceil(64)];
+        let mut p = 3;
+        while p * p <= limit {
+            if composite[p / 2 / 64] >> (p / 2 % 64) & 1 == 0 {
+                // Начинаем с p², шагаем по 2p — чётные кратные в решете не хранятся.
+                let mut j = p * p;
+                while j <= limit {
+                    composite[j / 2 / 64] |= 1 << (j / 2 % 64);
+                    j += 2 * p;
+                }
             }
+            p += 2;
         }
-        i += 1;
+        Sieve { limit, composite }
     }
-    is_prime
+
+    fn is_prime(&self, n: usize) -> bool {
+        match n {
+            _ if n > self.limit => panic!("{n} вне решета до {}", self.limit),
+            0 | 1 => false,
+            2 => true,
+            _ if n.is_multiple_of(2) => false,
+            _ => self.composite[n / 2 / 64] >> (n / 2 % 64) & 1 == 0,
+        }
+    }
+
+    fn primes(&self) -> impl Iterator<Item = usize> + '_ {
+        let odd = (3..=self.limit).step_by(2).filter(|&n| self.is_prime(n));
+        (self.limit >= 2).then_some(2).into_iter().chain(odd)
+    }
 }
 
 pub fn count_primes_upto(limit: usize) -> usize {
-    sieve(limit).into_iter().filter(|&p| p).count()
+    if limit < 2 {
+        return 0;
+    }
+    // Простые = 2 + все нечётные, кроме 1 и составных. Составные считаем через
+    // popcount по словам — это быстрее, чем проверять каждое число отдельно.
+    // Хвостовые биты последнего слова (за пределами решета) всегда нулевые.
+    let sieve = Sieve::new(limit);
+    let odd_count = limit.div_ceil(2);
+    let composites: usize = sieve
+        .composite
+        .iter()
+        .map(|w| w.count_ones() as usize)
+        .sum();
+    1 + (odd_count - 1) - composites
 }
 
 pub fn primes_upto(limit: usize) -> Vec<u64> {
-    sieve(limit)
-        .into_iter()
-        .enumerate()
-        .filter_map(|(n, p)| p.then_some(n as u64))
-        .collect()
+    Sieve::new(limit).primes().map(|n| n as u64).collect()
 }
 
 /// Детерминированный тест Миллера — Рабина, точен для всех u64.
@@ -57,13 +89,13 @@ pub fn is_prime_u64(n: u64) -> bool {
     }
     const BASES: [u64; 12] = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37];
     for &p in &BASES {
-        if n % p == 0 {
+        if n.is_multiple_of(p) {
             return n == p;
         }
     }
     let mut d = n - 1;
     let mut s = 0;
-    while d % 2 == 0 {
+    while d.is_multiple_of(2) {
         d /= 2;
         s += 1;
     }
@@ -114,8 +146,9 @@ fn check_limit(limit: usize) -> PyResult<()> {
 /// Сумма квадратов списка целых чисел.
 #[pyfunction]
 fn sum_squares(numbers: Vec<i64>) -> PyResult<i64> {
-    sum_squares_checked(&numbers)
-        .ok_or_else(|| PyOverflowError::new_err("переполнение int64 при вычислении суммы квадратов"))
+    sum_squares_checked(&numbers).ok_or_else(|| {
+        PyOverflowError::new_err("переполнение int64 при вычислении суммы квадратов")
+    })
 }
 
 /// Количество простых чисел, не превосходящих limit.
@@ -163,7 +196,18 @@ mod tests {
 
     #[test]
     fn prime_counts() {
-        for (limit, want) in [(0, 0), (1, 0), (2, 1), (10, 4), (100, 25), (1_000_000, 78_498)] {
+        // Граничные случаи: пустое решето (0), только 1, только 2, нечётная и чётная граница.
+        for (limit, want) in [
+            (0, 0),
+            (1, 0),
+            (2, 1),
+            (3, 2),
+            (4, 2),
+            (9, 4),
+            (10, 4),
+            (100, 25),
+            (1_000_000, 78_498),
+        ] {
             assert_eq!(count_primes_upto(limit), want, "limit = {limit}");
         }
         assert_eq!(primes_upto(20), vec![2, 3, 5, 7, 11, 13, 17, 19]);
@@ -171,9 +215,9 @@ mod tests {
 
     #[test]
     fn miller_rabin_matches_sieve() {
-        let flags = sieve(10_000);
+        let sieve = Sieve::new(10_000);
         for n in 0..=10_000u64 {
-            assert_eq!(is_prime_u64(n), flags[n as usize], "n = {n}");
+            assert_eq!(is_prime_u64(n), sieve.is_prime(n as usize), "n = {n}");
         }
         assert!(is_prime_u64(1_000_000_007));
         assert!(is_prime_u64(18_446_744_073_709_551_557)); // наибольшее простое < 2^64
