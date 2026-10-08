@@ -51,7 +51,7 @@ lab9/
 ```bash
 # 1. Rust-модуль: сборка Maturin и установка в текущий Python
 cd rust/fastmath
-maturin develop --release      # или: maturin build --release && pip install target/wheels/*.whl
+maturin develop --release      # или готовое колесо с PyPI: pip install fastmath-chetverikov
 cd ../..
 
 # 2. Демонстрации (Go-программы собираются автоматически в bin/ при первом запуске)
@@ -123,10 +123,17 @@ curl -X POST http://127.0.0.1:8080/matmul -d '{"size":300,"seed":1}'
 - **`ci.yml`** — на каждый push и PR на Ubuntu и Windows: `go vet`, `go test -race`, `cargo test`, сборка колеса Maturin, установка и интеграционные тесты Python.
 - **`release.yml`** — сборка колёс для Linux (manylinux), Windows и macOS через `PyO3/maturin-action`, проверка установки колеса и сборка sdist. При push тега `v*` артефакты публикуются на PyPI через **Trusted Publishing** (OIDC), поэтому API-токен не хранится в секретах репозитория.
 
-Публикация требует однократной настройки на стороне PyPI:
+**Пакет опубликован:** https://pypi.org/project/fastmath-chetverikov/ (версия 0.1.0 выпущена тегом `v0.1.0`). На PyPI лежат колёса для Linux x86_64, Windows x64 и macOS arm64, а также sdist.
 
-1. На https://pypi.org/manage/account/publishing/ добавить «pending publisher»: проект `fastmath-chetverikov`, владелец и имя этого репозитория, workflow `release.yml`, environment `pypi`.
-2. Выпустить версию: `git tag v0.1.0 && git push origin v0.1.0`.
+```bash
+pip install fastmath-chetverikov
+python -c "import fastmath; print(fastmath.sum_squares([1, 2, 3, 4, 5]))"   # 55
+```
+
+Как выпустить новую версию:
+
+1. Однократно на https://pypi.org/manage/account/publishing/ добавлен доверенный издатель: проект `fastmath-chetverikov`, этот репозиторий, workflow `release.yml`, environment `pypi`.
+2. Поднять версию в `rust/fastmath/pyproject.toml` и `Cargo.toml`, затем выполнить `git tag vX.Y.Z && git push origin vX.Y.Z`. GitHub Actions соберёт колёса и опубликует их.
 
 ## Результаты
 
