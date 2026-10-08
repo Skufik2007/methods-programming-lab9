@@ -18,6 +18,8 @@ func CountPrimes(limit int, workers int) int {
 	}
 
 	// Базовые простые до sqrt(limit) — обычным решетом.
+	// math.Sqrt считает во float64 и для больших limit может занизить корень на 1,
+	// поэтому результат доводится до точного целого floor(sqrt(limit)).
 	root := int(math.Sqrt(float64(limit)))
 	for (root+1)*(root+1) <= limit {
 		root++
@@ -25,7 +27,8 @@ func CountPrimes(limit int, workers int) int {
 	base := simpleSieve(root)
 
 	const segSize = 1 << 18
-	segments := make(chan int)
+	// Буфер по числу воркеров: раздача сегментов не ждёт, пока воркер освободится.
+	segments := make(chan int, workers)
 	counts := make(chan int, workers)
 
 	var wg sync.WaitGroup
@@ -139,6 +142,8 @@ func MatMul(a, b [][]float64, workers int) [][]float64 {
 					}
 					row[j] = s
 				}
+				// Гонки нет: каждый индекс i приходит из канала ровно одному воркеру,
+				// горутины пишут в разные элементы c, а чтение c происходит после wg.Wait().
 				c[i] = row
 			}
 		}()
