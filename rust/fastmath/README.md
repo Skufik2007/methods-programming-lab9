@@ -1,6 +1,6 @@
 # fastmath
 
-Python-модуль на Rust (PyO3 + Maturin), учебный проект для ЛР №9 «Методы программирования».
+Python-модуль на Rust (PyO3 + Maturin), учебный проект для ЛР №1 «Методы программирования».
 
 ```python
 import fastmath
