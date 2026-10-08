@@ -25,9 +25,9 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -44,7 +44,7 @@ jobs:
           pip install --no-index --find-links rust/fastmath/dist fastmath-chetverikov
           python -c "import fastmath; assert fastmath.sum_squares([1,2,3,4,5]) == 55; print('ok', fastmath.count_primes(10**6))"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wheels-${{ matrix.os }}
           path: rust/fastmath/dist
@@ -53,13 +53,13 @@ jobs:
     name: Исходный архив
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: PyO3/maturin-action@v1
         with:
           command: sdist
           working-directory: rust/fastmath
           args: --out dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: sdist
           path: rust/fastmath/dist
@@ -75,7 +75,7 @@ jobs:
     permissions:
       id-token: write # нужен для Trusted Publishing
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
