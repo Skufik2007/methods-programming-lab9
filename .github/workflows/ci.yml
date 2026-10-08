@@ -26,16 +26,23 @@ jobs:
           python-version: "3.12"
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
 
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust/fastmath
 
-      - name: Go — vet и тесты
-        working-directory: go
+      - name: Линтеры (gofmt, go vet, rustfmt, clippy)
+        if: runner.os == 'Linux'
         run: |
-          go vet ./...
-          go test -race ./...
+          test -z "$(gofmt -l go)" || { gofmt -l go; exit 1; }
+          (cd go && go vet ./...)
+          (cd rust/fastmath && cargo fmt --check && cargo clippy --all-targets -- -D warnings)
+
+      - name: Go — тесты с детектором гонок
+        working-directory: go
+        run: go test -race ./...
         if: runner.os == 'Linux'
 
       - name: Go — тесты
