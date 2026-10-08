@@ -34,6 +34,7 @@ class TcpClient:
         return resp["result"]
 
     def close(self) -> None:
+        """Корректно завершает сессию: request() отправляет quit и вычитывает ответ "bye"."""
         try:
             self.request("quit")
         except (OSError, ConnectionError, ServerError):

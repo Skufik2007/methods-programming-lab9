@@ -7,14 +7,16 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"time"
 )
 
 const (
-	maxLineSize = 1 << 20 // 1 МБ на одну строку запроса
-	idleTimeout = 5 * time.Minute
+	maxLineSize  = 1 << 20 // 1 МБ на одну строку запроса
+	idleTimeout  = 5 * time.Minute
+	writeTimeout = 10 * time.Second
 )
 
 // Request — запрос клиента.
@@ -102,9 +104,17 @@ func (s *Server) handle(conn net.Conn) {
 	enc := json.NewEncoder(conn)
 
 	for {
-		conn.SetReadDeadline(time.Now().Add(idleTimeout))
+		if err := conn.SetReadDeadline(time.Now().Add(idleTimeout)); err != nil {
+			log.Printf("%s: не удалось установить read deadline: %v", peer, err)
+			return
+		}
 		if !scanner.Scan() {
-			if err := scanner.Err(); err != nil && !errors.Is(err, net.ErrClosed) {
+			switch err := scanner.Err(); {
+			case err == nil, errors.Is(err, net.ErrClosed):
+				// клиент отключился сам или сервер останавливается
+			case errors.Is(err, os.ErrDeadlineExceeded):
+				log.Printf("%s: закрыто по тайм-ауту простоя (%s)", peer, idleTimeout)
+			default:
 				log.Printf("%s: ошибка чтения: %v", peer, err)
 			}
 			return
@@ -115,6 +125,12 @@ func (s *Server) handle(conn net.Conn) {
 		}
 
 		resp, quit := process(line)
+		// Без write deadline медленный или зависший клиент, который не читает
+		// ответы, мог бы навсегда заблокировать горутину на записи.
+		if err := conn.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
+			log.Printf("%s: не удалось установить write deadline: %v", peer, err)
+			return
+		}
 		if err := enc.Encode(resp); err != nil {
 			log.Printf("%s: ошибка записи: %v", peer, err)
 			return
